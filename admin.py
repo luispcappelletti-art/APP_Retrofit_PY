@@ -190,10 +190,11 @@ class StatKpiCard(QtWidgets.QFrame):
         self.value_label = QtWidgets.QLabel("-")
         self.value_label.setStyleSheet(f"""
             color: {accent};
-            font-size: 22px;
+            font-size: 20px;
             font-weight: 800;
             border: none;
         """)
+        self.value_label.setWordWrap(True)
 
         self.subtitle_label = QtWidgets.QLabel("")
         self.subtitle_label.setStyleSheet(f"""
@@ -978,7 +979,17 @@ class FirebaseManager(QtWidgets.QMainWindow):
     def init_estatisticas_tab(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+
+        scroll_content = QtWidgets.QWidget()
+        content_layout = QtWidgets.QVBoxLayout(scroll_content)
+        content_layout.setContentsMargins(14, 14, 14, 14)
+        content_layout.setSpacing(14)
 
         filter_card = ModernCard("Visão Estratégica")
         filter_layout = QtWidgets.QHBoxLayout()
@@ -1012,7 +1023,7 @@ class FirebaseManager(QtWidgets.QMainWindow):
         self.periodo_aplicado_label = QtWidgets.QLabel("Nenhum filtro aplicado.")
         self.periodo_aplicado_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 12px; border: none;")
         filter_card.main_layout.addWidget(self.periodo_aplicado_label)
-        layout.addWidget(filter_card)
+        content_layout.addWidget(filter_card)
 
         kpi_layout = QtWidgets.QGridLayout()
         kpi_layout.setHorizontalSpacing(12)
@@ -1031,7 +1042,7 @@ class FirebaseManager(QtWidgets.QMainWindow):
         kpi_layout.addWidget(self.kpi_cobertura, 1, 0)
         kpi_layout.addWidget(self.kpi_maior, 1, 1)
         kpi_layout.addWidget(self.kpi_menor, 1, 2)
-        layout.addLayout(kpi_layout)
+        content_layout.addLayout(kpi_layout)
 
         rankings_layout = QtWidgets.QHBoxLayout()
 
@@ -1054,7 +1065,7 @@ class FirebaseManager(QtWidgets.QMainWindow):
         faixa_card.main_layout.addWidget(self.faixa_valor_tree)
         rankings_layout.addWidget(faixa_card)
 
-        layout.addLayout(rankings_layout, 2)
+        content_layout.addLayout(rankings_layout, 2)
 
         perguntas_card = ModernCard("Insights do questionário")
         pergunta_filter_layout = QtWidgets.QHBoxLayout()
@@ -1075,7 +1086,12 @@ class FirebaseManager(QtWidgets.QMainWindow):
         self.perguntas_iniciais_stats_tree.header().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.perguntas_iniciais_stats_tree.setMinimumHeight(220)
         perguntas_card.main_layout.addWidget(self.perguntas_iniciais_stats_tree)
-        layout.addWidget(perguntas_card, 1)
+        content_layout.addWidget(perguntas_card, 1)
+
+        content_layout.addStretch()
+
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area)
 
         self.start_date_edit.dateChanged.connect(self.gerar_estatisticas)
         self.end_date_edit.dateChanged.connect(self.gerar_estatisticas)
