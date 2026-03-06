@@ -1019,16 +1019,16 @@ class FirebaseManager(QtWidgets.QMainWindow):
         kpi_layout.setVerticalSpacing(12)
 
         self.kpi_total_orcamentos = StatKpiCard("Total de orçamentos", Colors.PRIMARY)
-        self.kpi_receita = StatKpiCard("Receita total", Colors.SUCCESS)
         self.kpi_ticket = StatKpiCard("Ticket médio", Colors.INFO)
-        self.kpi_conversao_pecas = StatKpiCard("Itens por orçamento", Colors.WARNING)
+        self.kpi_mediana = StatKpiCard("Mediana", Colors.SUCCESS)
+        self.kpi_cobertura = StatKpiCard("Cobertura do questionário", Colors.WARNING)
         self.kpi_maior = StatKpiCard("Maior orçamento", Colors.PRIMARY_DARK)
         self.kpi_menor = StatKpiCard("Menor orçamento", Colors.DANGER)
 
         kpi_layout.addWidget(self.kpi_total_orcamentos, 0, 0)
-        kpi_layout.addWidget(self.kpi_receita, 0, 1)
-        kpi_layout.addWidget(self.kpi_ticket, 0, 2)
-        kpi_layout.addWidget(self.kpi_conversao_pecas, 1, 0)
+        kpi_layout.addWidget(self.kpi_ticket, 0, 1)
+        kpi_layout.addWidget(self.kpi_mediana, 0, 2)
+        kpi_layout.addWidget(self.kpi_cobertura, 1, 0)
         kpi_layout.addWidget(self.kpi_maior, 1, 1)
         kpi_layout.addWidget(self.kpi_menor, 1, 2)
         layout.addLayout(kpi_layout)
@@ -1036,7 +1036,7 @@ class FirebaseManager(QtWidgets.QMainWindow):
         rankings_layout = QtWidgets.QHBoxLayout()
 
         self.vendedor_ranking_tree = QtWidgets.QTreeWidget()
-        self.vendedor_ranking_tree.setHeaderLabels(["Vendedor", "Qtd", "%", "Receita"])
+        self.vendedor_ranking_tree.setHeaderLabels(["Vendedor", "Qtd", "%", "Ticket médio"])
         self.vendedor_ranking_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.vendedor_ranking_tree.header().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.vendedor_ranking_tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
@@ -1045,14 +1045,14 @@ class FirebaseManager(QtWidgets.QMainWindow):
         vendedores_card.main_layout.addWidget(self.vendedor_ranking_tree)
         rankings_layout.addWidget(vendedores_card)
 
-        self.pecas_ranking_tree = QtWidgets.QTreeWidget()
-        self.pecas_ranking_tree.setHeaderLabels(["Peça/Serviço", "Qtd", "%"])
-        self.pecas_ranking_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.pecas_ranking_tree.header().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.pecas_ranking_tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        pecas_card = ModernCard("Itens com maior recorrência")
-        pecas_card.main_layout.addWidget(self.pecas_ranking_tree)
-        rankings_layout.addWidget(pecas_card)
+        self.faixa_valor_tree = QtWidgets.QTreeWidget()
+        self.faixa_valor_tree.setHeaderLabels(["Faixa", "Qtd", "%"])
+        self.faixa_valor_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.faixa_valor_tree.header().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.faixa_valor_tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        faixa_card = ModernCard("Distribuição por faixa de orçamento")
+        faixa_card.main_layout.addWidget(self.faixa_valor_tree)
+        rankings_layout.addWidget(faixa_card)
 
         layout.addLayout(rankings_layout, 2)
 
@@ -1068,10 +1068,11 @@ class FirebaseManager(QtWidgets.QMainWindow):
         perguntas_card.main_layout.addLayout(pergunta_filter_layout)
 
         self.perguntas_iniciais_stats_tree = QtWidgets.QTreeWidget()
-        self.perguntas_iniciais_stats_tree.setHeaderLabels(["Resposta", "Qtd", "%"])
+        self.perguntas_iniciais_stats_tree.setHeaderLabels(["Resposta", "Qtd", "%", "Preço médio"])
         self.perguntas_iniciais_stats_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.perguntas_iniciais_stats_tree.header().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.perguntas_iniciais_stats_tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.perguntas_iniciais_stats_tree.header().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.perguntas_iniciais_stats_tree.setMinimumHeight(220)
         perguntas_card.main_layout.addWidget(self.perguntas_iniciais_stats_tree)
         layout.addWidget(perguntas_card, 1)
@@ -1819,8 +1820,14 @@ class FirebaseManager(QtWidgets.QMainWindow):
         soma_valores = 0
         valores = []
         vendedor_stats = {}
-        pecas_counts = {}
-        total_itens = 0
+        faixa_counts = {
+            "Até R$ 25 mil": 0,
+            "R$ 25 mil a R$ 50 mil": 0,
+            "R$ 50 mil a R$ 100 mil": 0,
+            "Acima de R$ 100 mil": 0
+        }
+        respostas_respondidas = 0
+        respostas_totais = 0
 
         todas_as_perguntas = set(self.perguntas_data.get("ordem", [])) if self.perguntas_data else set()
 
@@ -1831,26 +1838,45 @@ class FirebaseManager(QtWidgets.QMainWindow):
 
             vendedor = report.get("orcamentistaEmail") or "N/A"
             if vendedor not in vendedor_stats:
-                vendedor_stats[vendedor] = {"count": 0, "revenue": 0.0}
+                vendedor_stats[vendedor] = {"count": 0, "total_valor": 0.0}
             vendedor_stats[vendedor]["count"] += 1
-            vendedor_stats[vendedor]["revenue"] += report_value
+            vendedor_stats[vendedor]["total_valor"] += report_value
 
-            for item in report.get("itensOrcamento", []):
-                if (item.get("valor", 0) or 0) <= 0:
-                    continue
-                desc = item.get("descricao", "N/A")
-                pecas_counts[desc] = pecas_counts.get(desc, 0) + 1
-                total_itens += 1
+            if report_value <= 25000:
+                faixa_counts["Até R$ 25 mil"] += 1
+            elif report_value <= 50000:
+                faixa_counts["R$ 25 mil a R$ 50 mil"] += 1
+            elif report_value <= 100000:
+                faixa_counts["R$ 50 mil a R$ 100 mil"] += 1
+            else:
+                faixa_counts["Acima de R$ 100 mil"] += 1
 
-            if "respostasQuestionario" in report:
-                todas_as_perguntas.update(report["respostasQuestionario"].keys())
-            if "respostasIniciais" in report:
-                todas_as_perguntas.update(report["respostasIniciais"].keys())
+            respostas_questionario = report.get("respostasQuestionario", {})
+            respostas_iniciais = report.get("respostasIniciais", {})
+            if respostas_questionario:
+                todas_as_perguntas.update(respostas_questionario.keys())
+            if respostas_iniciais:
+                todas_as_perguntas.update(respostas_iniciais.keys())
+
+            respostas_unificadas = {}
+            respostas_unificadas.update(respostas_questionario)
+            respostas_unificadas.update(respostas_iniciais)
+            respostas_totais += len(respostas_unificadas)
+            respostas_respondidas += sum(1 for v in respostas_unificadas.values() if str(v or "").strip())
 
         valor_medio = soma_valores / total_relatorios if total_relatorios else 0
         maior_valor = max(valores) if valores else 0
         menor_valor = min(valores) if valores else 0
-        media_itens = total_itens / total_relatorios if total_relatorios else 0
+        if valores:
+            valores_ordenados = sorted(valores)
+            meio = len(valores_ordenados) // 2
+            if len(valores_ordenados) % 2 == 0:
+                mediana_valor = (valores_ordenados[meio - 1] + valores_ordenados[meio]) / 2
+            else:
+                mediana_valor = valores_ordenados[meio]
+        else:
+            mediana_valor = 0
+        cobertura_questionario = (respostas_respondidas / respostas_totais * 100) if respostas_totais else 0
 
         periodo = f"{start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"
         filtro_vendedor = vendedor_selecionado if vendedor_selecionado != "Todos" else "todos os vendedores"
@@ -1859,31 +1885,31 @@ class FirebaseManager(QtWidgets.QMainWindow):
         )
 
         self.kpi_total_orcamentos.set_data(str(total_relatorios), "Quantidade de propostas no período")
-        self.kpi_receita.set_data(format_currency(soma_valores), "Soma dos valores dos orçamentos")
-        self.kpi_ticket.set_data(format_currency(valor_medio), "Valor médio por orçamento")
-        self.kpi_conversao_pecas.set_data(f"{media_itens:.1f}", "Itens com valor por orçamento")
-        self.kpi_maior.set_data(format_currency(maior_valor), "Maior valor registrado")
-        self.kpi_menor.set_data(format_currency(menor_valor), "Menor valor registrado")
+        self.kpi_ticket.set_data(format_currency(valor_medio), "Média dos orçamentos gerados")
+        self.kpi_mediana.set_data(format_currency(mediana_valor), "Valor central para reduzir efeito de outliers")
+        self.kpi_cobertura.set_data(f"{cobertura_questionario:.1f}%", "Percentual de respostas preenchidas")
+        self.kpi_maior.set_data(format_currency(maior_valor), "Maior orçamento registrado")
+        self.kpi_menor.set_data(format_currency(menor_valor), "Menor orçamento registrado")
 
         self.vendedor_ranking_tree.clear()
-        for vendedor, data in sorted(vendedor_stats.items(), key=lambda item: item[1]["revenue"], reverse=True):
+        for vendedor, data in sorted(vendedor_stats.items(), key=lambda item: item[1]["count"], reverse=True):
             qtd = data["count"]
             pct = (qtd / total_relatorios * 100) if total_relatorios else 0
+            ticket_medio_vendedor = data["total_valor"] / qtd if qtd else 0
             self.vendedor_ranking_tree.addTopLevelItem(
                 QtWidgets.QTreeWidgetItem([
                     vendedor,
                     str(qtd),
                     f"{pct:.1f}%",
-                    format_currency(data["revenue"])
+                    format_currency(ticket_medio_vendedor)
                 ])
             )
 
-        self.pecas_ranking_tree.clear()
-        total_pecas = sum(pecas_counts.values())
-        for peca, qtd in sorted(pecas_counts.items(), key=lambda item: item[1], reverse=True):
-            pct = (qtd / total_pecas * 100) if total_pecas else 0
-            self.pecas_ranking_tree.addTopLevelItem(
-                QtWidgets.QTreeWidgetItem([peca, str(qtd), f"{pct:.1f}%"])
+        self.faixa_valor_tree.clear()
+        for faixa, qtd in faixa_counts.items():
+            pct = (qtd / total_relatorios * 100) if total_relatorios else 0
+            self.faixa_valor_tree.addTopLevelItem(
+                QtWidgets.QTreeWidgetItem([faixa, str(qtd), f"{pct:.1f}%"])
             )
 
         self.perguntas_iniciais_combo.blockSignals(True)
@@ -1900,21 +1926,28 @@ class FirebaseManager(QtWidgets.QMainWindow):
         if not pergunta_selecionada or pergunta_selecionada == "Selecione uma pergunta...":
             return
 
-        respostas_counts = {}
+        respostas_stats = {}
         for report in self.relatorios_filtrados_cache:
             resposta = report.get("respostasIniciais", {}).get(pergunta_selecionada)
             if resposta is None:
                 resposta = report.get("respostasQuestionario", {}).get(pergunta_selecionada)
             if not resposta:
                 resposta = "Não respondido"
-            resposta = str(resposta)
-            respostas_counts[resposta] = respostas_counts.get(resposta, 0) + 1
 
-        total = sum(respostas_counts.values()) or 1
-        for resposta, qtd in sorted(respostas_counts.items(), key=lambda item: item[1], reverse=True):
+            resposta = str(resposta)
+            if resposta not in respostas_stats:
+                respostas_stats[resposta] = {"count": 0, "total_valor": 0.0}
+            respostas_stats[resposta]["count"] += 1
+            respostas_stats[resposta]["total_valor"] += self._extract_report_value(report)
+
+        total = sum(item["count"] for item in respostas_stats.values()) or 1
+        ordenado = sorted(respostas_stats.items(), key=lambda item: item[1]["count"], reverse=True)
+        for resposta, dados in ordenado:
+            qtd = dados["count"]
             pct = (qtd / total) * 100
+            media_preco = dados["total_valor"] / qtd if qtd else 0
             self.perguntas_iniciais_stats_tree.addTopLevelItem(
-                QtWidgets.QTreeWidgetItem([resposta, str(qtd), f"{pct:.1f}%"])
+                QtWidgets.QTreeWidgetItem([resposta, str(qtd), f"{pct:.1f}%", format_currency(media_preco)])
             )
 
 
