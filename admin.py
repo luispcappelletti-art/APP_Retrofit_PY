@@ -44,6 +44,8 @@ class Colors:
     HOVER = "#2f3338"
     SUCCESS = "#28a745"
     DANGER = "#dc3545"
+    WARNING = "#ff9800"
+    INFO = "#17a2b8"
 
 
 def format_currency(value):
@@ -159,6 +161,56 @@ class ModernCard(QtWidgets.QFrame):
                 border: none;
             """)
             self.main_layout.addWidget(title_label)
+
+
+class StatKpiCard(QtWidgets.QFrame):
+    """Card enxuto para destacar métricas-chave da aba de estatísticas."""
+
+    def __init__(self, title, accent=Colors.PRIMARY, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.CARD};
+                border-radius: 12px;
+                border: 1px solid {Colors.BORDER};
+            }}
+        """)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(6)
+
+        title_label = QtWidgets.QLabel(title)
+        title_label.setStyleSheet(f"""
+            color: {Colors.TEXT_SECONDARY};
+            font-size: 12px;
+            font-weight: 600;
+            border: none;
+        """)
+
+        self.value_label = QtWidgets.QLabel("-")
+        self.value_label.setStyleSheet(f"""
+            color: {accent};
+            font-size: 22px;
+            font-weight: 800;
+            border: none;
+        """)
+
+        self.subtitle_label = QtWidgets.QLabel("")
+        self.subtitle_label.setStyleSheet(f"""
+            color: {Colors.TEXT_SECONDARY};
+            font-size: 11px;
+            border: none;
+        """)
+        self.subtitle_label.setWordWrap(True)
+
+        layout.addWidget(title_label)
+        layout.addWidget(self.value_label)
+        layout.addWidget(self.subtitle_label)
+        layout.addStretch()
+
+    def set_data(self, value, subtitle=""):
+        self.value_label.setText(value)
+        self.subtitle_label.setText(subtitle)
 
 
 # --- DIÁLOGOS ---
@@ -905,6 +957,16 @@ class FirebaseManager(QtWidgets.QMainWindow):
         self.label_relatorios = QtWidgets.QLabel("Nenhum relatório carregado.")
         card.main_layout.addWidget(self.label_relatorios)
 
+        resumo_layout = QtWidgets.QHBoxLayout()
+        self.reports_kpi_filtrados = QtWidgets.QLabel("Exibidos: 0")
+        self.reports_kpi_valor = QtWidgets.QLabel("Valor filtrado: R$ 0,00")
+        self.reports_kpi_ticket = QtWidgets.QLabel("Ticket filtrado: R$ 0,00")
+        for lbl in (self.reports_kpi_filtrados, self.reports_kpi_valor, self.reports_kpi_ticket):
+            lbl.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-weight: 600;")
+            resumo_layout.addWidget(lbl)
+        resumo_layout.addStretch()
+        card.main_layout.addLayout(resumo_layout)
+
         btn_layout = QtWidgets.QHBoxLayout()
         sync_btn = ModernButton("Importar Novos Relatórios", icon_char="📥", variant="primary")
         sync_btn.clicked.connect(self.sync_reports_from_firebase)
@@ -916,139 +978,104 @@ class FirebaseManager(QtWidgets.QMainWindow):
     def init_estatisticas_tab(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
+        layout.setSpacing(14)
 
-        filter_card = ModernCard("Filtros")
+        filter_card = ModernCard("Visão Estratégica")
         filter_layout = QtWidgets.QHBoxLayout()
 
-        filter_layout.addWidget(QtWidgets.QLabel("De:"))
+        filter_layout.addWidget(QtWidgets.QLabel("Período:"))
         self.start_date_edit = QtWidgets.QDateEdit(calendarPopup=True)
         self.start_date_edit.setDate(datetime.now().date().replace(day=1))
-        self.start_date_edit.setMaximumWidth(120)
+        self.start_date_edit.setMaximumWidth(130)
         filter_layout.addWidget(self.start_date_edit)
 
-        filter_layout.addWidget(QtWidgets.QLabel("Até:"))
+        filter_layout.addWidget(QtWidgets.QLabel("até"))
         self.end_date_edit = QtWidgets.QDateEdit(calendarPopup=True)
         self.end_date_edit.setDate(datetime.now().date())
-        self.end_date_edit.setMaximumWidth(120)
+        self.end_date_edit.setMaximumWidth(130)
         filter_layout.addWidget(self.end_date_edit)
 
+        filter_layout.addSpacing(12)
         filter_layout.addWidget(QtWidgets.QLabel("Vendedor:"))
         self.vendedor_combo = QtWidgets.QComboBox()
-        self.vendedor_combo.setMinimumWidth(250)
+        self.vendedor_combo.setMinimumWidth(280)
         self.vendedor_combo.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         self.vendedor_combo.setToolTip("Selecione um vendedor para filtrar")
         filter_layout.addWidget(self.vendedor_combo)
 
-        filter_layout.addStretch()
+        refresh_btn = ModernButton("Atualizar", icon_char="🔎", variant="secondary")
+        refresh_btn.clicked.connect(self.gerar_estatisticas)
+        filter_layout.addWidget(refresh_btn)
 
         filter_card.main_layout.addLayout(filter_layout)
+
+        self.periodo_aplicado_label = QtWidgets.QLabel("Nenhum filtro aplicado.")
+        self.periodo_aplicado_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 12px; border: none;")
+        filter_card.main_layout.addWidget(self.periodo_aplicado_label)
         layout.addWidget(filter_card)
 
-        results_layout = QtWidgets.QHBoxLayout()
+        kpi_layout = QtWidgets.QGridLayout()
+        kpi_layout.setHorizontalSpacing(12)
+        kpi_layout.setVerticalSpacing(12)
 
-        resumo_group = QtWidgets.QGroupBox("Resumo")
-        resumo_layout = QtWidgets.QGridLayout()
-        self.total_relatorios_label = QtWidgets.QLabel("Total de Orçamentos: 0")
-        self.valor_medio_label = QtWidgets.QLabel("Valor Médio: R$ 0,00")
-        self.maior_orcamento_label = QtWidgets.QLabel("Maior orçamento: R$ 0,00")
-        self.menor_orcamento_label = QtWidgets.QLabel("Menor orçamento: R$ 0,00")
-        resumo_layout.addWidget(self.total_relatorios_label, 0, 0)
-        resumo_layout.addWidget(self.valor_medio_label, 0, 1)
-        resumo_layout.addWidget(self.maior_orcamento_label, 1, 0)
-        resumo_layout.addWidget(self.menor_orcamento_label, 1, 1)
-        resumo_group.setLayout(resumo_layout)
-        results_layout.addWidget(resumo_group)
+        self.kpi_total_orcamentos = StatKpiCard("Total de orçamentos", Colors.PRIMARY)
+        self.kpi_receita = StatKpiCard("Receita total", Colors.SUCCESS)
+        self.kpi_ticket = StatKpiCard("Ticket médio", Colors.INFO)
+        self.kpi_conversao_pecas = StatKpiCard("Itens por orçamento", Colors.WARNING)
+        self.kpi_maior = StatKpiCard("Maior orçamento", Colors.PRIMARY_DARK)
+        self.kpi_menor = StatKpiCard("Menor orçamento", Colors.DANGER)
 
-        rankings_group = QtWidgets.QGroupBox("Rankings e Análises")
-        rankings_main_layout = QtWidgets.QHBoxLayout()
-        rankings_main_layout.setSpacing(15)
+        kpi_layout.addWidget(self.kpi_total_orcamentos, 0, 0)
+        kpi_layout.addWidget(self.kpi_receita, 0, 1)
+        kpi_layout.addWidget(self.kpi_ticket, 0, 2)
+        kpi_layout.addWidget(self.kpi_conversao_pecas, 1, 0)
+        kpi_layout.addWidget(self.kpi_maior, 1, 1)
+        kpi_layout.addWidget(self.kpi_menor, 1, 2)
+        layout.addLayout(kpi_layout)
 
-        vendedores_container = QtWidgets.QWidget()
-        vendedores_layout = QtWidgets.QVBoxLayout(vendedores_container)
-        vendedores_layout.setContentsMargins(0, 0, 0, 0)
-        vendedores_layout.setSpacing(5)
+        rankings_layout = QtWidgets.QHBoxLayout()
 
-        vendedores_layout.addWidget(QtWidgets.QLabel("<b>Ranking de Vendedores</b>"))
         self.vendedor_ranking_tree = QtWidgets.QTreeWidget()
-        self.vendedor_ranking_tree.setHeaderLabels(["Vendedor", "Orçamentos"])
+        self.vendedor_ranking_tree.setHeaderLabels(["Vendedor", "Qtd", "%", "Receita"])
         self.vendedor_ranking_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.vendedor_ranking_tree.setMinimumHeight(400)
-        self.vendedor_ranking_tree.setAlternatingRowColors(True)
+        self.vendedor_ranking_tree.header().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.vendedor_ranking_tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.vendedor_ranking_tree.header().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        vendedores_card = ModernCard("Performance por vendedor")
+        vendedores_card.main_layout.addWidget(self.vendedor_ranking_tree)
+        rankings_layout.addWidget(vendedores_card)
 
-        self.vendedor_ranking_tree.setStyleSheet(f"""
-            QTreeWidget {{
-                background-color: {Colors.CARD}; alternate-background-color: #f8f9fa;
-                border: 1px solid {Colors.BORDER}; border-radius: 8px;
-                gridline-color: {Colors.BORDER};
-            }}
-            QTreeWidget::item:hover {{ background-color: {Colors.PRIMARY} !important; color: white !important; }}
-            QTreeWidget::item:selected {{ background-color: {Colors.PRIMARY_DARK} !important; color: white !important; }}
-        """)
-        vendedores_layout.addWidget(self.vendedor_ranking_tree)
-        rankings_main_layout.addWidget(vendedores_container)
-
-        pecas_container = QtWidgets.QWidget()
-        pecas_layout = QtWidgets.QVBoxLayout(pecas_container)
-        pecas_layout.setContentsMargins(0, 0, 0, 0)
-        pecas_layout.setSpacing(5)
-
-        pecas_layout.addWidget(QtWidgets.QLabel("<b>Peças Mais Ofertadas</b>"))
         self.pecas_ranking_tree = QtWidgets.QTreeWidget()
-        self.pecas_ranking_tree.setHeaderLabels(["Peça/Serviço", "Quantidade"])
+        self.pecas_ranking_tree.setHeaderLabels(["Peça/Serviço", "Qtd", "%"])
         self.pecas_ranking_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.pecas_ranking_tree.setMinimumHeight(400)
-        self.pecas_ranking_tree.setAlternatingRowColors(True)
+        self.pecas_ranking_tree.header().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.pecas_ranking_tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        pecas_card = ModernCard("Itens com maior recorrência")
+        pecas_card.main_layout.addWidget(self.pecas_ranking_tree)
+        rankings_layout.addWidget(pecas_card)
 
-        self.pecas_ranking_tree.setStyleSheet(f"""
-            QTreeWidget {{
-                background-color: {Colors.CARD}; alternate-background-color: #f8f9fa;
-                border: 1px solid {Colors.BORDER}; border-radius: 8px;
-                gridline-color: {Colors.BORDER};
-            }}
-            QTreeWidget::item:hover {{ background-color: {Colors.SUCCESS} !important; color: white !important; }}
-            QTreeWidget::item:selected {{ background-color: #218838 !important; color: white !important; }}
-        """)
-        pecas_layout.addWidget(self.pecas_ranking_tree)
-        rankings_main_layout.addWidget(pecas_container)
+        layout.addLayout(rankings_layout, 2)
 
-        rankings_group.setLayout(rankings_main_layout)
-        results_layout.addWidget(rankings_group, 4)
-        layout.addLayout(results_layout, 3)
-
-        perguntas_group = QtWidgets.QGroupBox("Estatísticas por Pergunta")
-        perguntas_layout = QtWidgets.QVBoxLayout()
-        perguntas_layout.setSpacing(10)
-
+        perguntas_card = ModernCard("Insights do questionário")
         pergunta_filter_layout = QtWidgets.QHBoxLayout()
         pergunta_filter_layout.addWidget(QtWidgets.QLabel("Pergunta:"))
         self.perguntas_iniciais_combo = QtWidgets.QComboBox()
         self.perguntas_iniciais_combo.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
                                                     QtWidgets.QSizePolicy.Policy.Fixed)
-        self.perguntas_iniciais_combo.setMinimumWidth(300)
         self.perguntas_iniciais_combo.setToolTip("Selecione uma pergunta para ver as estatísticas")
         self.perguntas_iniciais_combo.currentIndexChanged.connect(self.atualizar_estatisticas_pergunta_selecionada)
         pergunta_filter_layout.addWidget(self.perguntas_iniciais_combo)
-        pergunta_filter_layout.addStretch()
-        perguntas_layout.addLayout(pergunta_filter_layout)
+        perguntas_card.main_layout.addLayout(pergunta_filter_layout)
 
         self.perguntas_iniciais_stats_tree = QtWidgets.QTreeWidget()
-        self.perguntas_iniciais_stats_tree.setHeaderLabels(["Resposta", "Quantidade"])
+        self.perguntas_iniciais_stats_tree.setHeaderLabels(["Resposta", "Qtd", "%"])
         self.perguntas_iniciais_stats_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.perguntas_iniciais_stats_tree.setMinimumHeight(180)
-        self.perguntas_iniciais_stats_tree.setAlternatingRowColors(True)
+        self.perguntas_iniciais_stats_tree.header().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.perguntas_iniciais_stats_tree.header().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.perguntas_iniciais_stats_tree.setMinimumHeight(220)
+        perguntas_card.main_layout.addWidget(self.perguntas_iniciais_stats_tree)
+        layout.addWidget(perguntas_card, 1)
 
-        self.perguntas_iniciais_stats_tree.setStyleSheet(f"""
-            QTreeWidget {{
-                background-color: {Colors.CARD}; alternate-background-color: #f8f9fa;
-                border: 1px solid {Colors.BORDER}; border-radius: 8px;
-                gridline-color: {Colors.BORDER};
-            }}
-            QTreeWidget::item:hover {{ background-color: #ff9800 !important; color: white !important; }}
-            QTreeWidget::item:selected {{ background-color: #f57c00 !important; color: white !important; }}
-        """)
-        perguntas_layout.addWidget(self.perguntas_iniciais_stats_tree)
-        perguntas_group.setLayout(perguntas_layout)
-        layout.addWidget(perguntas_group, 2)
         self.start_date_edit.dateChanged.connect(self.gerar_estatisticas)
         self.end_date_edit.dateChanged.connect(self.gerar_estatisticas)
         self.vendedor_combo.currentTextChanged.connect(self.gerar_estatisticas)
@@ -1060,6 +1087,10 @@ class FirebaseManager(QtWidgets.QMainWindow):
         emails = sorted(
             {r.get("orcamentistaEmail", "N/A") for r in self.local_reports_data if r.get("orcamentistaEmail")})
         self.vendedor_combo.addItems(emails)
+        try:
+            self.vendedor_combo.currentTextChanged.disconnect(self._update_vendedor_tooltip)
+        except TypeError:
+            pass
         self.vendedor_combo.currentTextChanged.connect(self._update_vendedor_tooltip)
         self._update_vendedor_tooltip(self.vendedor_combo.currentText())
 
@@ -1627,6 +1658,7 @@ class FirebaseManager(QtWidgets.QMainWindow):
         self.reports_table.setSortingEnabled(False)
         self.reports_table.setRowCount(0)
         self.relatorios_filtrados_cache = []
+        total_filtrado = 0.0
         primeira_pergunta = next(iter(self.perguntas_data.get("ordem", [])), "N/A")
         for report in self.local_reports_data:
             cliente = (report.get("respostasIniciais", {}).get(primeira_pergunta, "N/A") or "N/A")
@@ -1647,11 +1679,18 @@ class FirebaseManager(QtWidgets.QMainWindow):
             self.reports_table.setItem(row, 1, QtWidgets.QTableWidgetItem(cliente))
             self.reports_table.setItem(row, 2, QtWidgets.QTableWidgetItem(vendedor))
             valor = self._extract_report_value(report)
+            total_filtrado += valor
             valor_item = QtWidgets.QTableWidgetItem(format_currency(valor))
             valor_item.setData(Qt.ItemDataRole.UserRole, valor)
             self.reports_table.setItem(row, 3, valor_item)
             self.relatorios_filtrados_cache.append(report)
         self.reports_table.setSortingEnabled(True)
+
+        qtd = len(self.relatorios_filtrados_cache)
+        ticket = total_filtrado / qtd if qtd else 0
+        self.reports_kpi_filtrados.setText(f"Exibidos: {qtd}")
+        self.reports_kpi_valor.setText(f"Valor filtrado: {format_currency(total_filtrado)}")
+        self.reports_kpi_ticket.setText(f"Ticket filtrado: {format_currency(ticket)}")
 
     def sync_reports_from_firebase(self):
 
@@ -1748,21 +1787,6 @@ class FirebaseManager(QtWidgets.QMainWindow):
                 dialog.exec()
                 return
 
-    def atualizar_filtro_vendedores(self):
-        self.vendedor_combo.clear()
-        self.vendedor_combo.addItem("Todos")
-        emails = sorted(
-            {r.get("orcamentistaEmail", "N/A") for r in self.local_reports_data if r.get("orcamentistaEmail")})
-        self.vendedor_combo.addItems(emails)
-        self.vendedor_combo.currentTextChanged.connect(self._update_vendedor_tooltip)
-        self._update_vendedor_tooltip(self.vendedor_combo.currentText())
-
-    def _update_vendedor_tooltip(self, text):
-        if text and text != "Todos":
-            self.vendedor_combo.setToolTip(f"Vendedor selecionado: {text}")
-        else:
-            self.vendedor_combo.setToolTip("Selecione um vendedor para filtrar")
-
     def gerar_estatisticas(self):
         cache_key = (
             self.start_date_edit.date().toString(Qt.DateFormat.ISODate),
@@ -1773,85 +1797,126 @@ class FirebaseManager(QtWidgets.QMainWindow):
         if getattr(self, "_stats_cache_key", None) == cache_key:
             return
         self._stats_cache_key = cache_key
+
         start_date = self.start_date_edit.date().toPyDate()
         end_date = self.end_date_edit.date().toPyDate()
         vendedor_selecionado = self.vendedor_combo.currentText()
-        relatorios_filtrados = [
-            r for r in self.local_reports_data if "criadoEm" in r and r["criadoEm"]
-                                                  and start_date <= datetime.fromisoformat(
-                r["criadoEm"]).date() <= end_date
-                                                  and (vendedor_selecionado == "Todos" or r.get(
-                "orcamentistaEmail") == vendedor_selecionado)
-        ]
+
+        relatorios_filtrados = []
+        for report in self.local_reports_data:
+            criado_em = safe_date_from_iso(report.get("criadoEm"))
+            if not criado_em:
+                continue
+            if not (start_date <= criado_em.date() <= end_date):
+                continue
+            if vendedor_selecionado != "Todos" and report.get("orcamentistaEmail") != vendedor_selecionado:
+                continue
+            relatorios_filtrados.append(report)
+
         self.relatorios_filtrados_cache = relatorios_filtrados
         total_relatorios = len(relatorios_filtrados)
-        soma_valores, vendedor_counts, pecas_counts = 0, {}, {}
-        valores = []
 
-        todas_as_perguntas = set()
-        if self.perguntas_data:
-            todas_as_perguntas.update(self.perguntas_data.get("ordem", []))
+        soma_valores = 0
+        valores = []
+        vendedor_stats = {}
+        pecas_counts = {}
+        total_itens = 0
+
+        todas_as_perguntas = set(self.perguntas_data.get("ordem", [])) if self.perguntas_data else set()
 
         for report in relatorios_filtrados:
             report_value = self._extract_report_value(report)
             soma_valores += report_value
             valores.append(report_value)
-            vendedor = report.get("orcamentistaEmail", "N/A")
-            vendedor_counts[vendedor] = vendedor_counts.get(vendedor, 0) + 1
+
+            vendedor = report.get("orcamentistaEmail") or "N/A"
+            if vendedor not in vendedor_stats:
+                vendedor_stats[vendedor] = {"count": 0, "revenue": 0.0}
+            vendedor_stats[vendedor]["count"] += 1
+            vendedor_stats[vendedor]["revenue"] += report_value
+
             for item in report.get("itensOrcamento", []):
-                if (item.get("valor", 0) or 0) > 0:
-                    desc = item.get("descricao", "N/A")
-                    pecas_counts[desc] = pecas_counts.get(desc, 0) + 1
+                if (item.get("valor", 0) or 0) <= 0:
+                    continue
+                desc = item.get("descricao", "N/A")
+                pecas_counts[desc] = pecas_counts.get(desc, 0) + 1
+                total_itens += 1
 
-            if 'respostasQuestionario' in report:
-                todas_as_perguntas.update(report['respostasQuestionario'].keys())
-            if 'respostasIniciais' in report:
-                todas_as_perguntas.update(report['respostasIniciais'].keys())
+            if "respostasQuestionario" in report:
+                todas_as_perguntas.update(report["respostasQuestionario"].keys())
+            if "respostasIniciais" in report:
+                todas_as_perguntas.update(report["respostasIniciais"].keys())
 
-        valor_medio = soma_valores / total_relatorios if total_relatorios > 0 else 0
+        valor_medio = soma_valores / total_relatorios if total_relatorios else 0
         maior_valor = max(valores) if valores else 0
         menor_valor = min(valores) if valores else 0
+        media_itens = total_itens / total_relatorios if total_relatorios else 0
 
-        self.total_relatorios_label.setText(f"Total de Orçamentos: <b>{total_relatorios}</b>")
-        self.valor_medio_label.setText(f"Valor Médio: <b>{format_currency(valor_medio)}</b>")
-        self.maior_orcamento_label.setText(f"Maior orçamento: <b>{format_currency(maior_valor)}</b>")
-        self.menor_orcamento_label.setText(f"Menor orçamento: <b>{format_currency(menor_valor)}</b>")
+        periodo = f"{start_date.strftime('%d/%m/%Y')} até {end_date.strftime('%d/%m/%Y')}"
+        filtro_vendedor = vendedor_selecionado if vendedor_selecionado != "Todos" else "todos os vendedores"
+        self.periodo_aplicado_label.setText(
+            f"Análise de {periodo} • Filtro: {filtro_vendedor} • {total_relatorios} orçamento(s)"
+        )
+
+        self.kpi_total_orcamentos.set_data(str(total_relatorios), "Quantidade de propostas no período")
+        self.kpi_receita.set_data(format_currency(soma_valores), "Soma dos valores dos orçamentos")
+        self.kpi_ticket.set_data(format_currency(valor_medio), "Valor médio por orçamento")
+        self.kpi_conversao_pecas.set_data(f"{media_itens:.1f}", "Itens com valor por orçamento")
+        self.kpi_maior.set_data(format_currency(maior_valor), "Maior valor registrado")
+        self.kpi_menor.set_data(format_currency(menor_valor), "Menor valor registrado")
 
         self.vendedor_ranking_tree.clear()
-        for v, c in sorted(vendedor_counts.items(), key=lambda item: item[1], reverse=True):
-            self.vendedor_ranking_tree.addTopLevelItem(QtWidgets.QTreeWidgetItem([v, str(c)]))
+        for vendedor, data in sorted(vendedor_stats.items(), key=lambda item: item[1]["revenue"], reverse=True):
+            qtd = data["count"]
+            pct = (qtd / total_relatorios * 100) if total_relatorios else 0
+            self.vendedor_ranking_tree.addTopLevelItem(
+                QtWidgets.QTreeWidgetItem([
+                    vendedor,
+                    str(qtd),
+                    f"{pct:.1f}%",
+                    format_currency(data["revenue"])
+                ])
+            )
 
         self.pecas_ranking_tree.clear()
-        for p, c in sorted(pecas_counts.items(), key=lambda item: item[1], reverse=True):
-            self.pecas_ranking_tree.addTopLevelItem(QtWidgets.QTreeWidgetItem([p, str(c)]))
+        total_pecas = sum(pecas_counts.values())
+        for peca, qtd in sorted(pecas_counts.items(), key=lambda item: item[1], reverse=True):
+            pct = (qtd / total_pecas * 100) if total_pecas else 0
+            self.pecas_ranking_tree.addTopLevelItem(
+                QtWidgets.QTreeWidgetItem([peca, str(qtd), f"{pct:.1f}%"])
+            )
 
         self.perguntas_iniciais_combo.blockSignals(True)
         self.perguntas_iniciais_combo.clear()
         self.perguntas_iniciais_combo.addItem("Selecione uma pergunta...")
-        self.perguntas_iniciais_combo.addItems(sorted(list(todas_as_perguntas)))
+        self.perguntas_iniciais_combo.addItems(sorted(todas_as_perguntas))
         self.perguntas_iniciais_combo.blockSignals(False)
+
         self.atualizar_estatisticas_pergunta_selecionada()
 
     def atualizar_estatisticas_pergunta_selecionada(self):
         self.perguntas_iniciais_stats_tree.clear()
         pergunta_selecionada = self.perguntas_iniciais_combo.currentText()
-        if not pergunta_selecionada or pergunta_selecionada == "Selecione uma pergunta...": return
+        if not pergunta_selecionada or pergunta_selecionada == "Selecione uma pergunta...":
+            return
+
         respostas_counts = {}
         for report in self.relatorios_filtrados_cache:
             resposta = report.get("respostasIniciais", {}).get(pergunta_selecionada)
             if resposta is None:
                 resposta = report.get("respostasQuestionario", {}).get(pergunta_selecionada)
-
             if not resposta:
                 resposta = "Não respondido"
-
+            resposta = str(resposta)
             respostas_counts[resposta] = respostas_counts.get(resposta, 0) + 1
+
         total = sum(respostas_counts.values()) or 1
-        for r, c in sorted(respostas_counts.items(), key=lambda item: item[1], reverse=True):
-            pct = (c / total) * 100
+        for resposta, qtd in sorted(respostas_counts.items(), key=lambda item: item[1], reverse=True):
+            pct = (qtd / total) * 100
             self.perguntas_iniciais_stats_tree.addTopLevelItem(
-                QtWidgets.QTreeWidgetItem([r, f"{c} ({pct:.1f}%)"])
+                QtWidgets.QTreeWidgetItem([resposta, str(qtd), f"{pct:.1f}%"])
             )
+
 
 
 if __name__ == "__main__":
