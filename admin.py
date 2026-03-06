@@ -36,13 +36,33 @@ PERGUNTAS_INICIAIS_FILE = "perguntas_iniciais.json"
 class Colors:
     PRIMARY = "#4a90e2"
     PRIMARY_DARK = "#357abd"
-    BACKGROUND = "#f4f7fc"
-    CARD = "#ffffff"
-    TEXT = "#333333"
-    TEXT_SECONDARY = "#666666"
-    BORDER = "#e0e0e0"
+    BACKGROUND = "#1e1e1e"
+    CARD = "#252526"
+    TEXT = "#ffffff"
+    TEXT_SECONDARY = "#b7c0cd"
+    BORDER = "#4a90e2"
+    HOVER = "#2f3338"
     SUCCESS = "#28a745"
     DANGER = "#dc3545"
+
+
+def format_currency(value):
+    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def parse_decimal(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    text = text.replace(" ", "").replace(".", "").replace(",", ".")
+    return float(text)
+
+
+def safe_date_from_iso(iso_text):
+    try:
+        return datetime.fromisoformat(iso_text)
+    except (TypeError, ValueError):
+        return None
 
 def converter_firestore_para_json(data):
     from datetime import datetime
@@ -251,38 +271,10 @@ class ReportDetailsDialog(ModernDialog):
 
         super().__init__("Relatório de Orçamento", parent)
 
-        self.setMinimumSize(950, 700)
-
+        self.setMinimumSize(980, 680)
         layout = QtWidgets.QVBoxLayout(self)
-
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        container = QtWidgets.QWidget()
-        main_layout = QtWidgets.QVBoxLayout(container)
-        main_layout.setSpacing(20)
-
-        container.setStyleSheet("""
-        QWidget{
-            color:white;
-            background-color:#1e1e1e;
-        }
-
-        QLabel{
-            color:white;
-            font-size:14px;
-        }
-
-        QGroupBox{
-            border:1px solid #4a90e2;
-            border-radius:10px;
-            margin-top:10px;
-            padding:12px;
-            font-weight:600;
-            color:white;
-        }
-        """)
+        main_layout = QtWidgets.QVBoxLayout()
+        main_layout.setSpacing(14)
 
         # =====================
         # TÍTULO
@@ -315,7 +307,11 @@ class ReportDetailsDialog(ModernDialog):
 
         info.setTextFormat(Qt.TextFormat.RichText)
 
-        main_layout.addWidget(info)
+        resumo_box = QtWidgets.QGroupBox("Resumo")
+        resumo_layout = QtWidgets.QVBoxLayout()
+        resumo_layout.addWidget(info)
+        resumo_box.setLayout(resumo_layout)
+        main_layout.addWidget(resumo_box)
 
         # =====================
         # PERGUNTAS INICIAIS
@@ -325,7 +321,7 @@ class ReportDetailsDialog(ModernDialog):
 
         if respostas_iniciais:
 
-            box = QtWidgets.QGroupBox("PERGUNTAS INICIAIS")
+            box = QtWidgets.QGroupBox("Perguntas iniciais")
             box_layout = QtWidgets.QVBoxLayout()
 
             for pergunta, resposta in respostas_iniciais.items():
@@ -346,7 +342,7 @@ class ReportDetailsDialog(ModernDialog):
 
         if respostas_tecnicas:
 
-            box = QtWidgets.QGroupBox("PERGUNTAS TÉCNICAS")
+            box = QtWidgets.QGroupBox("Perguntas técnicas")
             box_layout = QtWidgets.QVBoxLayout()
 
             for pergunta, resposta in respostas_tecnicas.items():
@@ -370,7 +366,7 @@ class ReportDetailsDialog(ModernDialog):
 
         if itens_filtrados:
 
-            box = QtWidgets.QGroupBox("ITENS DO ORÇAMENTO")
+            box = QtWidgets.QGroupBox("Itens do orçamento")
             box_layout = QtWidgets.QVBoxLayout()
 
             total = 0
@@ -382,7 +378,7 @@ class ReportDetailsDialog(ModernDialog):
 
                 total += valor
 
-                valor_formatado = f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                valor_formatado = format_currency(valor)
 
                 linha = QtWidgets.QLabel(
                     f"• <b>{descricao}</b> — {valor_formatado}"
@@ -397,36 +393,48 @@ class ReportDetailsDialog(ModernDialog):
             # TOTAL
             # =====================
 
-            total_formatado = f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-            total_label = QtWidgets.QLabel(f"<b>TOTAL DO ORÇAMENTO: {total_formatado}</b>")
-
-            total_label.setStyleSheet("""
-            font-size:18px;
-            color:#00ff9c;
-            margin-top:10px;
-            """)
-
-            box_layout.addWidget(total_label)
-
             box.setLayout(box_layout)
             main_layout.addWidget(box)
+
+            total_box = QtWidgets.QGroupBox("Total")
+            total_layout = QtWidgets.QVBoxLayout()
+            total_label = QtWidgets.QLabel(f"<b>{format_currency(total)}</b>")
+            total_label.setStyleSheet("font-size: 20px; color: #00ff9c;")
+            total_layout.addWidget(total_label)
+            total_box.setLayout(total_layout)
+            main_layout.addWidget(total_box)
 
         # =====================
         # BOTÃO FECHAR
         # =====================
 
+        copiar = ModernButton("Copiar Relatório", icon_char="📋", variant="primary")
+        copiar.clicked.connect(lambda: self._copiar_relatorio(report_data, itens_filtrados))
         fechar = ModernButton("Fechar", variant="secondary")
         fechar.clicked.connect(self.accept)
+        btns = QtWidgets.QHBoxLayout()
+        btns.addWidget(copiar)
+        btns.addStretch()
+        btns.addWidget(fechar)
+        main_layout.addLayout(btns)
+        layout.addLayout(main_layout)
 
-        main_layout.addWidget(
-            fechar,
-            alignment=Qt.AlignmentFlag.AlignRight
-        )
-
-        scroll.setWidget(container)
-
-        layout.addWidget(scroll)
+    def _copiar_relatorio(self, report_data, itens_filtrados):
+        linhas = [
+            "RELATÓRIO DE ORÇAMENTO",
+            f"Data: {report_data.get('criadoEm', 'N/A')}",
+            f"Orçamentista: {report_data.get('orcamentistaEmail', 'N/A')}",
+            "",
+            "Itens do orçamento:",
+        ]
+        total = 0
+        for item in itens_filtrados:
+            valor = item.get("valor", 0) or 0
+            total += valor
+            linhas.append(f"- {item.get('descricao', 'Sem descrição')}: {format_currency(valor)}")
+        linhas.append(f"\nTotal: {format_currency(total)}")
+        QtWidgets.QApplication.clipboard().setText("\n".join(linhas))
+        ModernMessageBox.information(self, "Copiado", "Relatório copiado para a área de transferência.")
 
 
 class AddUserDialog(ModernDialog):
@@ -648,15 +656,16 @@ class FirebaseManager(QtWidgets.QMainWindow):
                 border-top-left-radius: 8px; border-top-right-radius: 8px;
                 font-weight: 600;
             }}
-            QTabBar::tab:selected {{ background-color: {Colors.CARD}; color: {Colors.PRIMARY}; border-color: {Colors.BORDER}; }}
+            QTabBar::tab:selected {{ background-color: {Colors.CARD}; color: {Colors.TEXT}; border-color: {Colors.BORDER}; }}
             QTabBar::tab:hover {{ color: {Colors.PRIMARY}; }}
             QTableWidget, QTreeWidget {{
-                background-color: {Colors.CARD}; alternate-background-color: #fdfdff;
+                background-color: {Colors.CARD}; alternate-background-color: #2b2d30;
                 border: 1px solid {Colors.BORDER}; border-radius: 8px;
                 gridline-color: {Colors.BORDER};
             }}
+            QTableWidget::item:hover, QTreeWidget::item:hover {{ background-color: {Colors.HOVER}; }}
             QHeaderView::section {{
-                background-color: {Colors.BACKGROUND}; padding: 10px;
+                background-color: #2a2a2a; padding: 10px;
                 border: none; border-bottom: 1px solid {Colors.BORDER};
                 font-weight: 600;
             }}
@@ -666,7 +675,7 @@ class FirebaseManager(QtWidgets.QMainWindow):
             QStatusBar {{ background-color: {Colors.CARD}; border-top: 1px solid {Colors.BORDER}; }}
             QGroupBox {{ font-weight: bold; border: 1px solid {Colors.BORDER}; border-radius: 8px; margin-top: 10px; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; }}
-            QDateEdit, QComboBox {{
+            QDateEdit, QComboBox, QLineEdit {{
                 background-color: {Colors.CARD}; border: 1px solid {Colors.BORDER};
                 border-radius: 6px; padding: 6px;
             }}
@@ -697,6 +706,11 @@ class FirebaseManager(QtWidgets.QMainWindow):
         self.init_usuarios_tab()
         self.init_relatorios_tab()
         self.init_estatisticas_tab()
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+
+    def on_tab_changed(self, index):
+        if self.tabs.tabText(index) == "Estatísticas":
+            self.gerar_estatisticas()
 
     def load_all_data(self):
         self.atualizar_labels()
@@ -711,6 +725,14 @@ class FirebaseManager(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(tab)
         card = ModernCard("Gerenciamento de Preços")
         layout.addWidget(card)
+
+        filtro_layout = QtWidgets.QHBoxLayout()
+        filtro_layout.addWidget(QtWidgets.QLabel("Buscar item:"))
+        self.prices_search_edit = QtWidgets.QLineEdit()
+        self.prices_search_edit.setPlaceholderText("Digite item/serviço...")
+        self.prices_search_edit.textChanged.connect(self.apply_prices_filter)
+        filtro_layout.addWidget(self.prices_search_edit)
+        card.main_layout.addLayout(filtro_layout)
 
         self.table = QtWidgets.QTableWidget()
         self.table.setColumnCount(2)
@@ -792,6 +814,14 @@ class FirebaseManager(QtWidgets.QMainWindow):
         card = ModernCard("Gerenciamento de Usuários")
         layout.addWidget(card)
 
+        search_layout = QtWidgets.QHBoxLayout()
+        search_layout.addWidget(QtWidgets.QLabel("Buscar email:"))
+        self.user_search_edit = QtWidgets.QLineEdit()
+        self.user_search_edit.setPlaceholderText("Filtrar usuários por email...")
+        self.user_search_edit.textChanged.connect(self.apply_users_filter)
+        search_layout.addWidget(self.user_search_edit)
+        card.main_layout.addLayout(search_layout)
+
         self.user_table = QtWidgets.QTableWidget()
         self.user_table.setColumnCount(3)
         self.user_table.setHorizontalHeaderLabels(["UID", "Email", "Status"])
@@ -843,16 +873,27 @@ class FirebaseManager(QtWidgets.QMainWindow):
         card = ModernCard("Relatórios de Orçamentos")
         layout.addWidget(card)
 
+        filter_layout = QtWidgets.QHBoxLayout()
+        filter_layout.addWidget(QtWidgets.QLabel("Buscar:"))
+        self.report_search_edit = QtWidgets.QLineEdit()
+        self.report_search_edit.setPlaceholderText("Cliente, vendedor ou item do orçamento...")
+        self.report_search_edit.textChanged.connect(self.apply_reports_filter)
+        filter_layout.addWidget(self.report_search_edit)
+        card.main_layout.addLayout(filter_layout)
+
         self.reports_table = QtWidgets.QTableWidget()
-        self.reports_table.setColumnCount(3)
-        self.reports_table.setHorizontalHeaderLabels(["Data", "Cliente", "Orçamentista"])
+        self.reports_table.setColumnCount(4)
+        self.reports_table.setHorizontalHeaderLabels(["Data", "Cliente", "Orçamentista", "Valor"])
         self.reports_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.reports_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.reports_table.setAlternatingRowColors(True)
+        self.reports_table.setSortingEnabled(True)
         self.reports_table.cellDoubleClicked.connect(self.show_report_details)
         header = self.reports_table.horizontalHeader()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         card.main_layout.addWidget(self.reports_table)
 
         self.label_relatorios = QtWidgets.QLabel("Nenhum relatório carregado.")
@@ -894,29 +935,21 @@ class FirebaseManager(QtWidgets.QMainWindow):
 
         filter_layout.addStretch()
 
-        gerar_btn = ModernButton("Gerar Estatísticas", icon_char="📊", variant="primary")
-        gerar_btn.clicked.connect(self.gerar_estatisticas)
-        filter_layout.addWidget(gerar_btn)
-
         filter_card.main_layout.addLayout(filter_layout)
         layout.addWidget(filter_card)
 
         results_layout = QtWidgets.QHBoxLayout()
 
         resumo_group = QtWidgets.QGroupBox("Resumo")
-        resumo_group.setMaximumWidth(200)
-        resumo_layout = QtWidgets.QVBoxLayout()
-        resumo_layout.setSpacing(5)
-
+        resumo_layout = QtWidgets.QGridLayout()
         self.total_relatorios_label = QtWidgets.QLabel("Total de Orçamentos: 0")
-        self.total_relatorios_label.setWordWrap(True)
         self.valor_medio_label = QtWidgets.QLabel("Valor Médio: R$ 0,00")
-        self.valor_medio_label.setWordWrap(True)
-
-        resumo_layout.addWidget(self.total_relatorios_label)
-        resumo_layout.addWidget(self.valor_medio_label)
-        resumo_layout.addStretch()
-
+        self.maior_orcamento_label = QtWidgets.QLabel("Maior orçamento: R$ 0,00")
+        self.menor_orcamento_label = QtWidgets.QLabel("Menor orçamento: R$ 0,00")
+        resumo_layout.addWidget(self.total_relatorios_label, 0, 0)
+        resumo_layout.addWidget(self.valor_medio_label, 0, 1)
+        resumo_layout.addWidget(self.maior_orcamento_label, 1, 0)
+        resumo_layout.addWidget(self.menor_orcamento_label, 1, 1)
         resumo_group.setLayout(resumo_layout)
         results_layout.addWidget(resumo_group)
 
@@ -1010,6 +1043,9 @@ class FirebaseManager(QtWidgets.QMainWindow):
         perguntas_layout.addWidget(self.perguntas_iniciais_stats_tree)
         perguntas_group.setLayout(perguntas_layout)
         layout.addWidget(perguntas_group, 2)
+        self.start_date_edit.dateChanged.connect(self.gerar_estatisticas)
+        self.end_date_edit.dateChanged.connect(self.gerar_estatisticas)
+        self.vendedor_combo.currentTextChanged.connect(self.gerar_estatisticas)
         self.tabs.addTab(tab, "Estatísticas")
 
     def atualizar_filtro_vendedores(self):
@@ -1073,6 +1109,7 @@ class FirebaseManager(QtWidgets.QMainWindow):
         else:
             self.statusBar.showMessage("Arquivo de perguntas não encontrado. Sincronize do Firebase.")
         self.populate_perguntas_tree()
+        self._stats_cache_key = None
 
     def sync_perguntas_from_firebase(self):
         if self.limites.get("perguntas_sync", 0) >= self.max_acessos_perg_sync:
@@ -1222,7 +1259,14 @@ class FirebaseManager(QtWidgets.QMainWindow):
             self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(item.get("selecionado", "")))
             self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(item.get("precos", ""))))
             self.doc_ids[i] = item.get("_id")
+        self.apply_prices_filter()
         self.statusBar.showMessage(f"{len(local_prices)} preços carregados do arquivo local.")
+
+    def apply_prices_filter(self):
+        search = self.prices_search_edit.text().strip().lower() if hasattr(self, "prices_search_edit") else ""
+        for row in range(self.table.rowCount()):
+            item_text = (self.table.item(row, 0).text() if self.table.item(row, 0) else "").lower()
+            self.table.setRowHidden(row, bool(search and search not in item_text))
 
     def sync_prices_from_firebase(self):
         if self.limites.get("pecas", 0) >= self.max_acessos_pecas:
@@ -1249,9 +1293,16 @@ class FirebaseManager(QtWidgets.QMainWindow):
             for row in range(self.table.rowCount()):
                 selecionado = self.table.item(row, 0).text() if self.table.item(row, 0) else ""
                 preco = self.table.item(row, 1).text() if self.table.item(row, 1) else ""
-                if preco and not preco.replace(',', '.', 1).isdigit():
+                if preco:
+                    try:
+                        parse_decimal(preco)
+                    except ValueError:
+                        ModernMessageBox.warning(self, "Erro",
+                                                 f"O valor '{preco}' na linha {row + 1} não é um número válido.")
+                        return
+                if preco and parse_decimal(preco) is None:
                     ModernMessageBox.warning(self, "Erro",
-                                             f"O valor '{preco}' na linha {row + 1} não é um número válido.")
+                                             f"O valor '{preco}' na linha {row + 1} não é válido.")
                     return
                 doc_id = self.doc_ids.get(row)
                 data_to_save = {"selecionado": selecionado, "precos": preco}
@@ -1298,10 +1349,15 @@ class FirebaseManager(QtWidgets.QMainWindow):
                 local_users = json.load(f)
             for i, user in enumerate(local_users):
                 self.user_table.insertRow(i)
-                self.user_table.setItem(i, 0, QtWidgets.QTableWidgetItem(user.get("uid", "")))
-                self.user_table.setItem(i, 1, QtWidgets.QTableWidgetItem(user.get("email", "")))
-                self.user_table.setItem(i, 2,
-                                        QtWidgets.QTableWidgetItem("Desativado" if user.get("disabled") else "Ativo"))
+                uid_item = QtWidgets.QTableWidgetItem(user.get("uid", ""))
+                email_item = QtWidgets.QTableWidgetItem(user.get("email", ""))
+                status_item = QtWidgets.QTableWidgetItem("Desativado" if user.get("disabled") else "Ativo")
+                if user.get("disabled"):
+                    for item in (uid_item, email_item, status_item):
+                        item.setForeground(QColor("#ff7b7b"))
+                self.user_table.setItem(i, 0, uid_item)
+                self.user_table.setItem(i, 1, email_item)
+                self.user_table.setItem(i, 2, status_item)
             self.statusBar.showMessage(f"{len(local_users)} usuários carregados.")
 
         # Adiciona usuários do cache à tabela
@@ -1328,6 +1384,13 @@ class FirebaseManager(QtWidgets.QMainWindow):
             self.user_table.setItem(row_position, 2, status_item)
 
         self.save_users_btn.setEnabled(bool(self.novos_usuarios_cache))
+        self.apply_users_filter()
+
+    def apply_users_filter(self):
+        search = self.user_search_edit.text().strip().lower() if hasattr(self, "user_search_edit") else ""
+        for row in range(self.user_table.rowCount()):
+            email = (self.user_table.item(row, 1).text() if self.user_table.item(row, 1) else "").lower()
+            self.user_table.setRowHidden(row, bool(search and search not in email))
 
     def sync_users_from_firebase(self):
         if self.novos_usuarios_cache:
@@ -1529,24 +1592,60 @@ class FirebaseManager(QtWidgets.QMainWindow):
         with open(RELATORIOS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             self.local_reports_data = data.get("reports", [])
-        self.reports_table.setRowCount(0)
-        primeira_pergunta = next(iter(self.perguntas_data.get("ordem", [])), "N/A")
-        for report in self.local_reports_data:
-            row_position = self.reports_table.rowCount()
-            self.reports_table.insertRow(row_position)
-            created_at_str = "Data Inválida"
-            try:
-                if "criadoEm" in report and report["criadoEm"]:
-                    created_at_str = datetime.fromisoformat(report["criadoEm"]).strftime("%d/%m/%Y %H:%M")
-            except (ValueError, TypeError):
-                pass
-            self.reports_table.setItem(row_position, 0, QtWidgets.QTableWidgetItem(created_at_str))
-            cliente = report.get("respostasIniciais", {}).get(primeira_pergunta, "N/A") or "N/A"
-            self.reports_table.setItem(row_position, 1, QtWidgets.QTableWidgetItem(cliente))
-            self.reports_table.setItem(row_position, 2,
-                                       QtWidgets.QTableWidgetItem(report.get("orcamentistaEmail", "N/A")))
+        self._stats_cache_key = None
+        self.apply_reports_filter()
         self.atualizar_labels()
         self.atualizar_filtro_vendedores()
+        self.gerar_estatisticas()
+
+    def _extract_report_value(self, report):
+        total = 0.0
+        for item in report.get("itensOrcamento", []):
+            valor = item.get("valor", 0) or 0
+            if valor > 0:
+                total += valor
+        if total > 0:
+            return total
+        valor_str = report.get("estimativaFormatada", "")
+        numbers = re.findall(r'[\d\.,]+', valor_str)
+        vals = []
+        for n in numbers:
+            try:
+                vals.append(float(n.replace('.', '').replace(',', '.')))
+            except ValueError:
+                pass
+        return (sum(vals) / len(vals)) if vals else 0.0
+
+    def apply_reports_filter(self):
+        query = self.report_search_edit.text().strip().lower() if hasattr(self, "report_search_edit") else ""
+        self.reports_table.setSortingEnabled(False)
+        self.reports_table.setRowCount(0)
+        self.relatorios_filtrados_cache = []
+        primeira_pergunta = next(iter(self.perguntas_data.get("ordem", [])), "N/A")
+        for report in self.local_reports_data:
+            cliente = (report.get("respostasIniciais", {}).get(primeira_pergunta, "N/A") or "N/A")
+            vendedor = report.get("orcamentistaEmail", "N/A")
+            itens_texto = " ".join((i.get("descricao", "") for i in report.get("itensOrcamento", []))).lower()
+            lookup = f"{cliente} {vendedor} {itens_texto}".lower()
+            if query and query not in lookup:
+                continue
+            row = self.reports_table.rowCount()
+            self.reports_table.insertRow(row)
+            data_obj = safe_date_from_iso(report.get("criadoEm"))
+            data_texto = data_obj.strftime("%d/%m/%Y %H:%M") if data_obj else "Data Inválida"
+            item_data = QtWidgets.QTableWidgetItem(data_texto)
+            if data_obj:
+                item_data.setData(Qt.ItemDataRole.UserRole, data_obj.timestamp())
+            item_data.setData(Qt.ItemDataRole.UserRole + 1, report.get("_id", str(id(report))))
+            self.reports_table.setItem(row, 0, item_data)
+            self.reports_table.setItem(row, 1, QtWidgets.QTableWidgetItem(cliente))
+            self.reports_table.setItem(row, 2, QtWidgets.QTableWidgetItem(vendedor))
+            valor = self._extract_report_value(report)
+            valor_item = QtWidgets.QTableWidgetItem(format_currency(valor))
+            valor_item.setData(Qt.ItemDataRole.UserRole, valor)
+            self.reports_table.setItem(row, 3, valor_item)
+            self.relatorios_filtrados_cache.append(report)
+        self.reports_table.setSortingEnabled(True)
 
     def sync_reports_from_firebase(self):
 
@@ -1633,9 +1732,15 @@ class FirebaseManager(QtWidgets.QMainWindow):
 
 
     def show_report_details(self, row, column):
-        if row < len(self.local_reports_data):
-            dialog = ReportDetailsDialog(self.local_reports_data[row], self)
-            dialog.exec()
+        item = self.reports_table.item(row, 0)
+        if not item:
+            return
+        report_id = item.data(Qt.ItemDataRole.UserRole + 1)
+        for report in self.relatorios_filtrados_cache:
+            if report.get("_id", str(id(report))) == report_id:
+                dialog = ReportDetailsDialog(report, self)
+                dialog.exec()
+                return
 
     def atualizar_filtro_vendedores(self):
         self.vendedor_combo.clear()
@@ -1653,6 +1758,15 @@ class FirebaseManager(QtWidgets.QMainWindow):
             self.vendedor_combo.setToolTip("Selecione um vendedor para filtrar")
 
     def gerar_estatisticas(self):
+        cache_key = (
+            self.start_date_edit.date().toString(Qt.DateFormat.ISODate),
+            self.end_date_edit.date().toString(Qt.DateFormat.ISODate),
+            self.vendedor_combo.currentText(),
+            len(self.local_reports_data)
+        )
+        if getattr(self, "_stats_cache_key", None) == cache_key:
+            return
+        self._stats_cache_key = cache_key
         start_date = self.start_date_edit.date().toPyDate()
         end_date = self.end_date_edit.date().toPyDate()
         vendedor_selecionado = self.vendedor_combo.currentText()
@@ -1666,23 +1780,22 @@ class FirebaseManager(QtWidgets.QMainWindow):
         self.relatorios_filtrados_cache = relatorios_filtrados
         total_relatorios = len(relatorios_filtrados)
         soma_valores, vendedor_counts, pecas_counts = 0, {}, {}
+        valores = []
 
         todas_as_perguntas = set()
         if self.perguntas_data:
             todas_as_perguntas.update(self.perguntas_data.get("ordem", []))
 
         for report in relatorios_filtrados:
-            valor_str = report.get("estimativaFormatada", "")
-            numeros = re.findall(r'[\d\.,]+', valor_str)
-            if numeros:
-                try:
-                    soma_valores += sum(float(n.replace('.', '').replace(',', '.')) for n in numeros) / len(numeros)
-                except ValueError:
-                    pass
+            report_value = self._extract_report_value(report)
+            soma_valores += report_value
+            valores.append(report_value)
             vendedor = report.get("orcamentistaEmail", "N/A")
             vendedor_counts[vendedor] = vendedor_counts.get(vendedor, 0) + 1
-            for resposta in report.get("respostasQuestionario", {}).values():
-                pecas_counts[resposta] = pecas_counts.get(resposta, 0) + 1
+            for item in report.get("itensOrcamento", []):
+                if (item.get("valor", 0) or 0) > 0:
+                    desc = item.get("descricao", "N/A")
+                    pecas_counts[desc] = pecas_counts.get(desc, 0) + 1
 
             if 'respostasQuestionario' in report:
                 todas_as_perguntas.update(report['respostasQuestionario'].keys())
@@ -1690,10 +1803,13 @@ class FirebaseManager(QtWidgets.QMainWindow):
                 todas_as_perguntas.update(report['respostasIniciais'].keys())
 
         valor_medio = soma_valores / total_relatorios if total_relatorios > 0 else 0
+        maior_valor = max(valores) if valores else 0
+        menor_valor = min(valores) if valores else 0
 
         self.total_relatorios_label.setText(f"Total de Orçamentos: <b>{total_relatorios}</b>")
-        self.valor_medio_label.setText(
-            f"Valor Médio: <b>R$ {valor_medio:,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."))
+        self.valor_medio_label.setText(f"Valor Médio: <b>{format_currency(valor_medio)}</b>")
+        self.maior_orcamento_label.setText(f"Maior orçamento: <b>{format_currency(maior_valor)}</b>")
+        self.menor_orcamento_label.setText(f"Menor orçamento: <b>{format_currency(menor_valor)}</b>")
 
         self.vendedor_ranking_tree.clear()
         for v, c in sorted(vendedor_counts.items(), key=lambda item: item[1], reverse=True):
@@ -1724,8 +1840,12 @@ class FirebaseManager(QtWidgets.QMainWindow):
                 resposta = "Não respondido"
 
             respostas_counts[resposta] = respostas_counts.get(resposta, 0) + 1
+        total = sum(respostas_counts.values()) or 1
         for r, c in sorted(respostas_counts.items(), key=lambda item: item[1], reverse=True):
-            self.perguntas_iniciais_stats_tree.addTopLevelItem(QtWidgets.QTreeWidgetItem([r, str(c)]))
+            pct = (c / total) * 100
+            self.perguntas_iniciais_stats_tree.addTopLevelItem(
+                QtWidgets.QTreeWidgetItem([r, f"{c} ({pct:.1f}%)"])
+            )
 
 
 if __name__ == "__main__":
