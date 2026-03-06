@@ -273,7 +273,12 @@ class ReportDetailsDialog(ModernDialog):
 
         self.setMinimumSize(980, 680)
         layout = QtWidgets.QVBoxLayout(self)
-        main_layout = QtWidgets.QVBoxLayout()
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll_content = QtWidgets.QWidget()
+        main_layout = QtWidgets.QVBoxLayout(scroll_content)
         main_layout.setSpacing(14)
 
         # =====================
@@ -417,7 +422,8 @@ class ReportDetailsDialog(ModernDialog):
         btns.addStretch()
         btns.addWidget(fechar)
         main_layout.addLayout(btns)
-        layout.addLayout(main_layout)
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area)
 
     def _copiar_relatorio(self, report_data, itens_filtrados):
         linhas = [
